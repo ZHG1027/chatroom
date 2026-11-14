@@ -7,6 +7,16 @@
   
 <link rel="icon" type="image/png" href="https://ZHG1027.github.io/chatroom/icon.png">
 <link rel="apple-touch-icon" href="https://ZHG1027.github.io/chatroom/icon.png">
+<script>
+  // 强制刷新防缓存
+  (function forceReload() {
+    const url = new URL(location.href);
+    if (!url.searchParams.has('_v')) {
+      url.searchParams.set('_v', Date.now());
+      location.replace(url.toString());
+    }
+  })();
+</script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
   if (typeof Peer === 'undefined') {
@@ -32,7 +42,25 @@
     border:1px solid #232c38;border-radius:22px;padding:30px 24px;
     box-shadow:0 24px 70px rgba(0,0,0,.65);
   }
-  .card h1{font-size:20px;font-weight:600;text-align:center;letter-spacing:.5px;margin-bottom:22px}
+ .card h1{
+  font-size:20px;
+  font-weight:600;
+  text-align:center;
+  letter-spacing:.5px;
+  margin-bottom:22px;
+  display: flex;             /* 新增 */
+  align-items: center;       /* 新增：垂直居中 */
+  justify-content: center;   /* 新增：水平居中 */
+  gap: 8px;                  /* 新增：图片和文字的间距 */
+}
+
+/* 新增 Logo 图片的样式 */
+.logo-img {
+  width: 32px;               /* 图片大小，可根据喜好微调 */
+  height: 32px;
+  border-radius: 8px;        /* 圆角，如果想全圆可以改成 50% */
+  object-fit: cover;
+}
 
   .avatar-pick{width:88px;height:88px;margin:0 auto 22px;position:relative;cursor:pointer}
   .avatar-pick img{
@@ -65,8 +93,10 @@
     width: 100%; margin-top: 12px; padding: 12px; border-radius: 13px;
     background: #1c242f; color: #a8b6c8; font-size: 14px; font-weight: 600;
     border: 1px solid #263140; transition: .2s; display: none;
+    line-height: 1.4;
   }
   #notifyGuideBtn:hover { background: #263140; color: #e6edf3; }
+  #notifyGuideBtn:disabled { opacity: 0.7; cursor: not-allowed; }
 
   /* ---------- 聊天页 ---------- */
   #app{position:relative}
@@ -102,7 +132,7 @@
     width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0;
     background:#263140;border:1px solid #263140;
   }
-  .msg .body{display:flex;flex-direction:column;gap:3px;max-width:calc(100% - 54px);min-width:0}
+  .msg .body{display:flex;flex-direction:column;gap:3px;max-width:calc(100% - 54px);min-width:0;position:relative}
   .msg.me .body{align-items:flex-end}
   .nickname{
     font-size:11px;color:#6b7a8d;padding:0 3px;max-width:100%;
@@ -112,6 +142,9 @@
   .bubble{
     max-width:100%;padding:10px 14px;border-radius:16px;font-size:15px;
     line-height:1.5;word-break:break-word;white-space:pre-wrap;position:relative;
+    cursor: pointer;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
   .me .bubble{
     background:linear-gradient(135deg,#2b6cf6,#4a7dff);color:#fff;
@@ -124,6 +157,12 @@
   .bubble.img{padding:4px;background:#1c242f;border:1px solid #263140}
   .bubble.img img{
     display:block;max-width:100%;max-height:330px;border-radius:13px;cursor:zoom-in;
+  }
+  
+  .bubble.recalled {
+    background: transparent !important; border: 1px dashed #4b5a6d !important;
+    color: #6b7a8d !important; font-size: 12px; padding: 6px 12px !important;
+    cursor: default;
   }
 
   /* 引用区块样式 */
@@ -138,7 +177,6 @@
     max-width: 100%;
     word-break: break-all;
     white-space: normal;
-    cursor: pointer;
   }
   .them .quote-block {
     background: rgba(255,255,255,0.05);
@@ -149,29 +187,6 @@
     font-weight: 600;
     margin-right: 4px;
   }
-
-  /* 引用按钮 */
-  .quote-btn {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    background: #263140;
-    color: #a8b6c8;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    opacity: 0;
-    transition: .2s;
-    pointer-events: none;
-  }
-  .msg.me .quote-btn { right: 100%; margin-right: 8px; }
-  .msg.them .quote-btn { left: 100%; margin-left: 8px; }
-  .msg:hover .quote-btn, .msg:active .quote-btn { opacity: 1; pointer-events: auto; }
-  .quote-btn:hover { background: #2b6cf6; color: #fff; }
 
   /* 输入框上方引用预览 */
   #quotePreview {
@@ -210,7 +225,7 @@
     display:flex;align-items:flex-end;gap:8px;padding:9px 12px;
     background:#11161d;border-top:1px solid #1e2733;flex-shrink:0;
     padding-bottom:calc(9px + env(safe-area-inset-bottom));
-    flex-wrap: wrap; /* 允许换行 */
+    flex-wrap: wrap;
   }
   #quotePreview { width: 100%; margin-bottom: 8px; }
 
@@ -249,6 +264,42 @@
     display:flex;align-items:center;justify-content:center;cursor:zoom-out;padding:20px;
   }
   #lightbox img{max-width:100%;max-height:100%;border-radius:8px}
+
+  /* ====== 长按菜单样式 ====== */
+  #contextMenu {
+    position: fixed;
+    background: #2a3441;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    display: flex;
+    flex-direction: column;
+    z-index: 300;
+    overflow: hidden;
+    min-width: 120px;
+    animation: fadeIn .1s ease-out;
+  }
+  @keyframes fadeIn { from{opacity:0;transform:scale(0.95)} to{opacity:1;transform:scale(1)} }
+  #contextMenu .menu-item {
+    padding: 12px 20px;
+    font-size: 14px;
+    color: #e6edf3;
+    cursor: pointer;
+    border-bottom: 1px solid #364352;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  #contextMenu .menu-item:last-child { border-bottom: none; }
+  #contextMenu .menu-item:hover { background: #364352; }
+  #contextMenu .menu-item.danger { color: #ff5252; }
+  #contextMenu .menu-item.danger:hover { background: rgba(255,82,82,0.1); }
+
+  #menuOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 299;
+    background: transparent;
+  }
 </style>
 </head>
 <body>
@@ -256,7 +307,10 @@
 <!-- ================= 登录页 ================= -->
 <div id="login" class="screen">
   <div class="card">
-    <h1>🔒 点对点聊天室</h1>
+    <h1>
+  <img src="https://ZHG1027.github.io/chatroom/icon.png" alt="Logo" class="logo-img">
+  点对点聊天室
+</h1>
 
     <div class="avatar-pick" id="avatarPick">
       <img id="avatarPreview" alt="">
@@ -308,6 +362,14 @@
 
 <div id="lightbox" class="hidden"><img id="lightboxImg" alt=""></div>
 
+<!-- 长按操作菜单 -->
+<div id="menuOverlay" class="hidden"></div>
+<div id="contextMenu" class="hidden">
+  <div class="menu-item" id="menuCopy">📋 复制</div>
+  <div class="menu-item" id="menuQuote">↩️ 引用</div>
+  <div class="menu-item danger hidden" id="menuRecall">✕ 撤回</div>
+</div>
+
 <script>
 (function () {
   'use strict';
@@ -319,6 +381,8 @@
   const GUEST_TIMEOUT = 12000;
   const AVATAR_SIZE = 96;
   const HISTORY_MAX = 60;
+  const RECALL_LIFETIME = 120000;
+  const LONG_PRESS_TIME = 500;
 
   const PEER_OPTIONS = {
     debug: 0,
@@ -353,6 +417,12 @@
   const quotePreview = $('quotePreview');
   const quoteName = $('quoteName');
   const quoteText = $('quoteText');
+  
+  const menuOverlay = $('menuOverlay');
+  const contextMenu = $('contextMenu');
+  const menuCopy = $('menuCopy');
+  const menuQuote = $('menuQuote');
+  const menuRecall = $('menuRecall');
 
   /* ================= 状态 ================= */
   const state = {
@@ -365,11 +435,15 @@
     conn: null,
     conns: new Map(),
     timer: null,
-    currentQuote: null // 当前引用的消息
+    currentQuote: null
   };
 
   const incoming = new Map();
   let audioCtx = null;
+  
+  let longPressTimer = null;
+  let isLongPressed = false;
+  let currentMenuOpts = null;
 
   /* ================= 基础工具 ================= */
   function hashRoom(str) {
@@ -426,6 +500,109 @@
     });
   }
 
+  /* ================= 长按菜单逻辑 ================= */
+  function showContextMenu(x, y, opts) {
+    currentMenuOpts = opts;
+    
+    if (opts.kind === 'image' || opts.kind === 'recalled') {
+      menuCopy.classList.add('hidden');
+    } else {
+      menuCopy.classList.remove('hidden');
+    }
+
+    const canRecall = opts.mine && opts.kind !== 'recalled' && (Date.now() - opts.time <= RECALL_LIFETIME);
+    if (canRecall) {
+      menuRecall.classList.remove('hidden');
+    } else {
+      menuRecall.classList.add('hidden');
+    }
+
+    menuOverlay.classList.remove('hidden');
+    contextMenu.classList.remove('hidden');
+
+    const menuWidth = contextMenu.offsetWidth;
+    const menuHeight = contextMenu.offsetHeight;
+    const winWidth = window.innerWidth;
+    const winHeight = window.innerHeight;
+
+    let posX = x;
+    let posY = y;
+
+    if (posX + menuWidth > winWidth - 10) posX = winWidth - menuWidth - 10;
+    if (posY + menuHeight > winHeight - 10) posY = posY - menuHeight - 10;
+    
+    if (posX < 10) posX = 10;
+    if (posY < 10) posY = 10;
+
+    contextMenu.style.left = posX + 'px';
+    contextMenu.style.top = posY + 'px';
+  }
+
+  function hideContextMenu() {
+    menuOverlay.classList.add('hidden');
+    contextMenu.classList.add('hidden');
+    currentMenuOpts = null;
+  }
+
+  menuOverlay.addEventListener('click', hideContextMenu);
+
+  menuCopy.addEventListener('click', () => {
+    if (!currentMenuOpts || !currentMenuOpts.text) return;
+    const textToCopy = currentMenuOpts.text;
+    
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(textToCopy).then(() => {
+        addSys('已复制到剪贴板');
+      }).catch(() => {
+        fallbackCopy(textToCopy);
+      });
+    } else {
+      fallbackCopy(textToCopy);
+    }
+    hideContextMenu();
+  });
+
+  function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+      addSys('已复制到剪贴板');
+    } catch (e) {
+      addSys('复制失败，请手动选择');
+    }
+    document.body.removeChild(ta);
+  }
+
+  menuQuote.addEventListener('click', () => {
+    if (!currentMenuOpts) return;
+    setQuote({
+      from: currentMenuOpts.from,
+      text: currentMenuOpts.text,
+      kind: currentMenuOpts.kind
+    });
+    hideContextMenu();
+  });
+
+  menuRecall.addEventListener('click', () => {
+    if (!currentMenuOpts) return;
+    if (Date.now() - currentMenuOpts.time > RECALL_LIFETIME) {
+      alert('已经超过2分钟，无法撤回');
+      hideContextMenu();
+      return;
+    }
+    if (confirm('确定要撤回这条消息吗？')) {
+      deliver({ type: 'recall', msgId: currentMenuOpts.msgId });
+      doRecallUI(currentMenuOpts.msgId);
+      updateHistoryRecall(currentMenuOpts.msgId);
+    }
+    hideContextMenu();
+  });
+
   /* ================= 引用处理 ================= */
   function setQuote(msgData) {
     state.currentQuote = msgData;
@@ -442,7 +619,7 @@
 
   $('quoteCancel').addEventListener('click', clearQuote);
 
-  /* ================= 本地聊天记录 ================= */
+  /* ================= 历史记录处理 ================= */
   function getHistoryKey() {
     return 'pchat_history_' + state.room;
   }
@@ -452,6 +629,9 @@
       const key = getHistoryKey();
       let list = JSON.parse(localStorage.getItem(key) || '[]');
       if (msgObj.kind === 'image' && msgObj.src && msgObj.src.length > 500000) return;
+      
+      if (list.some(m => m.msgId === msgObj.msgId)) return;
+      
       list.push(msgObj);
       if (list.length > HISTORY_MAX) list = list.slice(list.length - HISTORY_MAX);
       localStorage.setItem(key, JSON.stringify(list));
@@ -465,6 +645,21 @@
     }
   }
 
+  function updateHistoryRecall(msgId) {
+    try {
+      const key = getHistoryKey();
+      let list = JSON.parse(localStorage.getItem(key) || '[]');
+      const idx = list.findIndex(m => m.msgId === msgId);
+      if (idx > -1) {
+        list[idx].kind = 'recalled';
+        list[idx].text = '消息已撤回';
+        list[idx].src = '';
+        list[idx].quote = null;
+        localStorage.setItem(key, JSON.stringify(list));
+      }
+    } catch (e) {}
+  }
+
   function loadHistory() {
     try {
       const list = JSON.parse(localStorage.getItem(getHistoryKey()) || '[]');
@@ -474,7 +669,7 @@
           addMsg({
             kind: item.kind, text: item.text, src: item.src,
             mine: item.mine, from: item.from, quote: item.quote,
-            skipSave: true
+            msgId: item.msgId, time: item.time, skipSave: true
           });
         });
         setTimeout(() => { msgEl.scrollTop = msgEl.scrollHeight; }, 50);
@@ -529,24 +724,56 @@
 
   /* ================= 通知与提示音 ================= */
   function initNotification() {
+    // 确保按钮默认可见
+    notifyGuideBtn.style.display = 'block';
+    
+    // 判断是否为 iOS 设备
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    // 判断是否为 PWA 独立窗口模式（添加到主屏幕后）
+    const isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+
     if (!('Notification' in window)) {
-      notifyGuideBtn.textContent = '❌ 浏览器不支持通知';
-      notifyGuideBtn.disabled = true;
+      if (isIOS && !isStandalone) {
+        notifyGuideBtn.textContent = '🔔 请添加到主屏幕后开启通知';
+        notifyGuideBtn.disabled = false; // 允许点击，点击后弹窗说明
+      } else {
+        notifyGuideBtn.textContent = '❌ 浏览器不支持通知';
+        notifyGuideBtn.disabled = true;
+      }
       return;
     }
+
     if (Notification.permission === 'granted') {
       notifyGuideBtn.style.display = 'none';
     } else if (Notification.permission === 'denied') {
-      notifyGuideBtn.textContent = '⚠️ 通知已被拒绝';
-      notifyGuideBtn.style.display = 'block';
-      notifyGuideBtn.disabled = true;
+      notifyGuideBtn.textContent = '⚠️ 通知已被拒绝，请在浏览器设置中开启';
+      notifyGuideBtn.disabled = false; // 允许点击说明
     } else {
-      notifyGuideBtn.style.display = 'block';
+      notifyGuideBtn.textContent = '🔔 开启新消息通知';
+      notifyGuideBtn.disabled = false;
     }
   }
 
   notifyGuideBtn.addEventListener('click', async () => {
-    if (!('Notification' in window)) return;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+
+    if (!('Notification' in window)) {
+      if (isIOS && !isStandalone) {
+        alert('iOS 系统限制说明：\n\n请点击浏览器底部的“分享”按钮，选择“添加到主屏幕”，然后从桌面打开本网页，即可开启系统通知。');
+      } else {
+        alert('您的浏览器不支持系统级通知。');
+      }
+      return;
+    }
+
+    if (Notification.permission === 'denied') {
+      alert('通知权限已被拒绝。请前往设备系统设置或浏览器设置中，允许本网页发送通知。');
+      return;
+    }
+
+    if (Notification.permission === 'granted') return;
+
     try {
       const permission = await Notification.requestPermission();
       if (permission === 'granted') {
@@ -558,9 +785,10 @@
         if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
       } else {
         notifyGuideBtn.textContent = '⚠️ 通知权限未开启';
-        notifyGuideBtn.disabled = true;
       }
-    } catch (e) {}
+    } catch (e) {
+      alert('请求通知权限失败，请检查浏览器设置。');
+    }
   });
 
   function playNotificationSound() {
@@ -614,23 +842,86 @@
     $('lightboxImg').src = '';
   });
 
+  function doRecallUI(msgId) {
+    const targetMsgEl = document.querySelector(`.msg[data-msg-id="${msgId}"]`);
+    if (!targetMsgEl) return;
+
+    const bubble = targetMsgEl.querySelector('.bubble');
+    if (bubble) {
+      bubble.className = 'bubble recalled';
+      bubble.innerHTML = '消息已撤回';
+      bubble.onclick = null;
+      bubble.oncontextmenu = null;
+      bubble.ontouchstart = null;
+      bubble.onmousedown = null;
+    }
+  }
+
+  function bindLongPress(element, opts) {
+    const startPress = (e) => {
+      if (opts.kind === 'recalled') return;
+      isLongPressed = false;
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+      longPressTimer = setTimeout(() => {
+        isLongPressed = true;
+        if (navigator.vibrate) navigator.vibrate(50);
+        showContextMenu(clientX, clientY, opts);
+      }, LONG_PRESS_TIME);
+    };
+
+    const cancelPress = () => {
+      clearTimeout(longPressTimer);
+    };
+
+    element.addEventListener('touchstart', startPress, { passive: true });
+    element.addEventListener('touchend', cancelPress);
+    element.addEventListener('touchmove', cancelPress);
+
+    element.addEventListener('mousedown', startPress);
+    element.addEventListener('mouseup', cancelPress);
+    element.addEventListener('mouseleave', cancelPress);
+    
+    element.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (opts.kind !== 'recalled') {
+        showContextMenu(e.clientX, e.clientY, opts);
+      }
+    });
+
+    element.onclick = (e) => {
+      if (isLongPressed) {
+        e.preventDefault();
+        return;
+      }
+      if (opts.kind === 'image') {
+        openLightbox(opts.src);
+      }
+    };
+  }
+
   function addMsg(opts) {
     const f = opts.from || { name: state.myName, avatar: state.myAvatar };
     const mine = !!opts.mine;
+    const msgId = opts.msgId || (Date.now().toString(36) + Math.random().toString(36).slice(2, 7));
+    const time = opts.time || Date.now();
+    
+    const messageData = {
+      ...opts,
+      mine,
+      from: f,
+      msgId,
+      time
+    };
 
     if (!opts.skipSave) {
-      saveHistory({
-        kind: opts.kind,
-        text: opts.text || '',
-        src: opts.src || '',
-        mine: mine,
-        from: f,
-        quote: opts.quote || null
-      });
+      saveHistory(messageData);
     }
 
     const wrap = document.createElement('div');
     wrap.className = 'msg ' + (mine ? 'me' : 'them');
+    wrap.dataset.msgId = msgId;
 
     const av = document.createElement('img');
     av.className = 'avatar';
@@ -647,40 +938,33 @@
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
 
-    // 如果有引用，先渲染引用区块
-    if (opts.quote) {
-      const qBlock = document.createElement('div');
-      qBlock.className = 'quote-block';
-      qBlock.innerHTML = `<span class="q-name">@${opts.quote.name}</span> ${opts.quote.kind === 'image' ? '[图片]' : opts.quote.text}`;
-      bubble.appendChild(qBlock);
-    }
-
-    // 渲染具体内容
-    if (opts.kind === 'image') {
-      bubble.classList.add('img');
-      const im = new Image();
-      im.src = opts.src;
-      im.onclick = () => openLightbox(opts.src);
-      bubble.appendChild(im);
+    if (opts.kind === 'recalled') {
+      bubble.classList.add('recalled');
+      bubble.textContent = '消息已撤回';
     } else {
-      // 使用 textContent 防止 XSS，但这里因为有了引用区块的 DOM，需要用文本节点插入
-      const textNode = document.createTextNode(opts.text);
-      bubble.appendChild(textNode);
-    }
+      if (opts.quote) {
+        const qBlock = document.createElement('div');
+        qBlock.className = 'quote-block';
+        const qNameSpan = document.createElement('span');
+        qNameSpan.className = 'q-name';
+        qNameSpan.textContent = '@' + opts.quote.name;
+        qBlock.appendChild(qNameSpan);
+        qBlock.appendChild(document.createTextNode(' ' + (opts.quote.kind === 'image' ? '[图片]' : opts.quote.text)));
+        bubble.appendChild(qBlock);
+      }
 
-    // 引用按钮
-    const qBtn = document.createElement('div');
-    qBtn.className = 'quote-btn';
-    qBtn.innerHTML = '↩';
-    qBtn.onclick = (e) => {
-      e.stopPropagation();
-      setQuote({
-        from: f,
-        text: opts.text,
-        kind: opts.kind
-      });
-    };
-    wrap.appendChild(qBtn);
+      if (opts.kind === 'image') {
+        bubble.classList.add('img');
+        const im = new Image();
+        im.src = opts.src;
+        bubble.appendChild(im);
+      } else {
+        const textNode = document.createTextNode(opts.text);
+        bubble.appendChild(textNode);
+      }
+
+      bindLongPress(bubble, messageData);
+    }
 
     body.appendChild(nick);
     body.appendChild(bubble);
@@ -752,7 +1036,7 @@
         break;
       }
       case 'text':
-        addMsg({ kind: 'text', text: d.text, mine: false, from, quote: d.quote });
+        addMsg({ kind: 'text', text: d.text, mine: false, from, quote: d.quote, msgId: d.msgId, time: d.time });
         broadcast(d, conn.peer);
         if (from) {
           playNotificationSound();
@@ -760,7 +1044,7 @@
         }
         break;
       case 'img-start':
-        incoming.set(d.id, { parts: new Array(d.total), got: 0, from, quote: d.quote });
+        incoming.set(d.id, { parts: new Array(d.total), got: 0, from, quote: d.quote, msgId: d.msgId, time: d.time });
         broadcast(d, conn.peer);
         break;
       case 'img-chunk': {
@@ -773,12 +1057,18 @@
         const e = incoming.get(d.id);
         if (e) {
           incoming.delete(d.id);
-          addMsg({ kind: 'image', src: e.parts.join(''), mine: false, from: e.from, quote: e.quote });
+          addMsg({ kind: 'image', src: e.parts.join(''), mine: false, from: e.from, quote: e.quote, msgId: e.msgId, time: e.time });
           if (e.from) {
             playNotificationSound();
             showBrowserNotification(e.from.name + ' 发来图片', '点击查看图片');
           }
         }
+        broadcast(d, conn.peer);
+        break;
+      }
+      case 'recall': {
+        doRecallUI(d.msgId);
+        updateHistoryRecall(d.msgId);
         broadcast(d, conn.peer);
         break;
       }
@@ -794,14 +1084,14 @@
         addSys(d.text);
         break;
       case 'text':
-        addMsg({ kind: 'text', text: d.text, mine: false, from: d.from, quote: d.quote });
+        addMsg({ kind: 'text', text: d.text, mine: false, from: d.from, quote: d.quote, msgId: d.msgId, time: d.time });
         if (d.from) {
           playNotificationSound();
           showBrowserNotification(d.from.name + ' 发来消息', d.text);
         }
         break;
       case 'img-start':
-        incoming.set(d.id, { parts: new Array(d.total), got: 0, from: d.from, quote: d.quote });
+        incoming.set(d.id, { parts: new Array(d.total), got: 0, from: d.from, quote: d.quote, msgId: d.msgId, time: d.time });
         break;
       case 'img-chunk': {
         const e = incoming.get(d.id);
@@ -812,7 +1102,7 @@
         const e = incoming.get(d.id);
         if (e) {
           incoming.delete(d.id);
-          addMsg({ kind: 'image', src: e.parts.join(''), mine: false, from: e.from, quote: e.quote });
+          addMsg({ kind: 'image', src: e.parts.join(''), mine: false, from: e.from, quote: e.quote, msgId: e.msgId, time: e.time });
           if (e.from) {
             playNotificationSound();
             showBrowserNotification(e.from.name + ' 发来图片', '点击查看图片');
@@ -820,6 +1110,10 @@
         }
         break;
       }
+      case 'recall':
+        doRecallUI(d.msgId);
+        updateHistoryRecall(d.msgId);
+        break;
     }
   }
 
@@ -840,6 +1134,7 @@
     state.conn = null;
     state.conns.clear();
     clearQuote();
+    hideContextMenu();
   }
 
   function startAsHost() {
@@ -1026,9 +1321,11 @@
 
     const from = myProfile();
     const quote = state.currentQuote;
+    const msgId = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    const time = Date.now();
     
-    addMsg({ kind: 'text', text, mine: true, from, quote });
-    deliver({ type: 'text', text, from, quote });
+    addMsg({ kind: 'text', text, mine: true, from, quote, msgId, time });
+    deliver({ type: 'text', text, from, quote, msgId, time });
     
     clearQuote();
   }
@@ -1133,13 +1430,15 @@
 
       const from = myProfile();
       const quote = state.currentQuote;
+      const msgId = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      const time = Date.now();
 
-      addMsg({ kind: 'image', src: dataUrl, mine: true, from, quote });
+      addMsg({ kind: 'image', src: dataUrl, mine: true, from, quote, msgId, time });
 
       const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
       const total = Math.ceil(dataUrl.length / CHUNK);
 
-      deliver({ type: 'img-start', id, total, from, quote });
+      deliver({ type: 'img-start', id, total, from, quote, msgId, time });
       for (let i = 0; i < total; i++) {
         deliver({ type: 'img-chunk', id, i, data: dataUrl.slice(i * CHUNK, (i + 1) * CHUNK) });
         if (i % 6 === 5) await new Promise(r => setTimeout(r, 0));
