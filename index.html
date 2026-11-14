@@ -1,0 +1,1213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>点对点聊天室</title>
+<link rel="apple-touch-icon" href="icon.png">
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script>
+  if (typeof Peer === 'undefined') {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"><\/script>');
+  }
+</script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:#0b0f14;color:#e6edf3;overflow:hidden;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .screen{height:100dvh;display:flex;flex-direction:column}
+  .hidden{display:none!important}
+
+  /* ---------- 登录页 ---------- */
+  #login{align-items:center;justify-content:center;padding:20px;overflow-y:auto}
+  .card{
+    width:100%;max-width:360px;
+    background:linear-gradient(180deg,#161c24,#11161d);
+    border:1px solid #232c38;border-radius:22px;padding:30px 24px;
+    box-shadow:0 24px 70px rgba(0,0,0,.65);
+  }
+  .card h1{font-size:20px;font-weight:600;text-align:center;letter-spacing:.5px;margin-bottom:22px}
+
+  .avatar-pick{width:88px;height:88px;margin:0 auto 22px;position:relative;cursor:pointer}
+  .avatar-pick img{
+    width:88px;height:88px;border-radius:50%;object-fit:cover;display:block;
+    border:2px solid #263140;background:#0d1218;
+  }
+  .avatar-edit{
+    position:absolute;right:-3px;bottom:-3px;width:28px;height:28px;border-radius:50%;
+    background:linear-gradient(135deg,#2b6cf6,#6b4df6);display:flex;align-items:center;
+    justify-content:center;font-size:13px;color:#fff;border:2px solid #11161d;pointer-events:none;
+  }
+
+  .field{margin-top:14px}
+  .field label{font-size:12px;color:#8896a8;display:block;margin-bottom:6px;padding-left:2px}
+  input[type=text]{
+    width:100%;padding:13px 16px;background:#0d1218;border:1px solid #263140;
+    border-radius:12px;color:#e6edf3;font-size:15px;outline:none;transition:.2s;font-family:inherit;
+  }
+  input[type=text]:focus{border-color:#2b6cf6;box-shadow:0 0 0 3px rgba(43,108,246,.15)}
+  button{cursor:pointer;font-family:inherit;border:none;outline:none}
+  .primary{
+    width:100%;margin-top:22px;padding:14px;border-radius:13px;
+    background:linear-gradient(135deg,#2b6cf6,#6b4df6);color:#fff;
+    font-size:16px;font-weight:600;transition:.2s;
+  }
+  .primary:hover{filter:brightness(1.12)}
+  .primary:active{transform:scale(.985)}
+
+  #notifyGuideBtn {
+    width: 100%; margin-top: 12px; padding: 12px; border-radius: 13px;
+    background: #1c242f; color: #a8b6c8; font-size: 14px; font-weight: 600;
+    border: 1px solid #263140; transition: .2s; display: none;
+  }
+  #notifyGuideBtn:hover { background: #263140; color: #e6edf3; }
+
+  /* ---------- 聊天页 ---------- */
+  #app{position:relative}
+  header{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:11px 16px;background:#11161d;border-bottom:1px solid #1e2733;flex-shrink:0;
+  }
+  .room-info{display:flex;align-items:center;gap:8px;font-size:14px;min-width:0}
+  #roomLabel{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:44vw}
+  #statusText{font-size:12px;color:#8896a8;white-space:nowrap}
+  .dot{width:8px;height:8px;border-radius:50%;background:#6b7a8d;flex-shrink:0}
+  .dot.online{background:#2ecc71;box-shadow:0 0 8px #2ecc71}
+  .dot.waiting{background:#f1c40f;animation:pulse 1.4s infinite}
+  .dot.error{background:#e74c3c}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  .ghost-btn{
+    padding:7px 14px;border-radius:20px;background:#1c242f;color:#a8b6c8;
+    font-size:13px;transition:.15s;flex-shrink:0;
+  }
+  .ghost-btn:hover{background:#263140;color:#e6edf3}
+
+  #messages{
+    flex:1;overflow-y:auto;padding:16px 14px 8px;
+    display:flex;flex-direction:column;gap:12px;overscroll-behavior:contain;
+  }
+  #messages::-webkit-scrollbar{width:6px}
+  #messages::-webkit-scrollbar-thumb{background:#263140;border-radius:3px}
+
+  .msg{display:flex;gap:9px;align-items:flex-start;animation:pop .16s ease-out;position:relative;}
+  @keyframes pop{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .msg.me{flex-direction:row-reverse;}
+  .msg .avatar{
+    width:34px;height:34px;border-radius:50%;object-fit:cover;flex-shrink:0;
+    background:#263140;border:1px solid #263140;
+  }
+  .msg .body{display:flex;flex-direction:column;gap:3px;max-width:calc(100% - 54px);min-width:0}
+  .msg.me .body{align-items:flex-end}
+  .nickname{
+    font-size:11px;color:#6b7a8d;padding:0 3px;max-width:100%;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  
+  .bubble{
+    max-width:100%;padding:10px 14px;border-radius:16px;font-size:15px;
+    line-height:1.5;word-break:break-word;white-space:pre-wrap;position:relative;
+  }
+  .me .bubble{
+    background:linear-gradient(135deg,#2b6cf6,#4a7dff);color:#fff;
+    border-bottom-right-radius:5px;
+  }
+  .them .bubble{
+    background:#1c242f;color:#e6edf3;border:1px solid #263140;
+    border-bottom-left-radius:5px;
+  }
+  .bubble.img{padding:4px;background:#1c242f;border:1px solid #263140}
+  .bubble.img img{
+    display:block;max-width:100%;max-height:330px;border-radius:13px;cursor:zoom-in;
+  }
+
+  /* 引用区块样式 */
+  .quote-block {
+    background: rgba(0,0,0,0.15);
+    border-left: 3px solid #4a7dff;
+    padding: 6px 10px;
+    margin-bottom: 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: #b0c4de;
+    max-width: 100%;
+    word-break: break-all;
+    white-space: normal;
+    cursor: pointer;
+  }
+  .them .quote-block {
+    background: rgba(255,255,255,0.05);
+    color: #8896a8;
+    border-left-color: #6b7a8d;
+  }
+  .quote-block .q-name {
+    font-weight: 600;
+    margin-right: 4px;
+  }
+
+  /* 引用按钮 */
+  .quote-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #263140;
+    color: #a8b6c8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    opacity: 0;
+    transition: .2s;
+    pointer-events: none;
+  }
+  .msg.me .quote-btn { right: 100%; margin-right: 8px; }
+  .msg.them .quote-btn { left: 100%; margin-left: 8px; }
+  .msg:hover .quote-btn, .msg:active .quote-btn { opacity: 1; pointer-events: auto; }
+  .quote-btn:hover { background: #2b6cf6; color: #fff; }
+
+  /* 输入框上方引用预览 */
+  #quotePreview {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #1c242f;
+    border: 1px solid #263140;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin: 0 12px;
+    font-size: 12px;
+    color: #a8b6c8;
+    border-left: 3px solid #2b6cf6;
+  }
+  #quotePreview .q-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    margin-right: 10px;
+  }
+  #quotePreview .q-close {
+    cursor: pointer;
+    font-size: 16px;
+    color: #6b7a8d;
+  }
+  #quotePreview .q-close:hover { color: #e74c3c; }
+
+  .sys{
+    align-self:center;font-size:12px;color:#6b7a8d;background:rgba(255,255,255,.045);
+    padding:5px 13px;border-radius:20px;max-width:85%;text-align:center;line-height:1.5;
+  }
+
+  footer{
+    display:flex;align-items:flex-end;gap:8px;padding:9px 12px;
+    background:#11161d;border-top:1px solid #1e2733;flex-shrink:0;
+    padding-bottom:calc(9px + env(safe-area-inset-bottom));
+    flex-wrap: wrap; /* 允许换行 */
+  }
+  #quotePreview { width: 100%; margin-bottom: 8px; }
+
+  .icon-btn{
+    width:40px;height:40px;border-radius:50%;background:#1c242f;font-size:18px;
+    display:flex;align-items:center;justify-content:center;transition:.15s;flex-shrink:0;
+  }
+  .icon-btn:hover{background:#263140}
+  #input{
+    flex:1;resize:none;max-height:120px;padding:11px 15px;background:#0d1218;
+    border:1px solid #263140;border-radius:20px;color:#e6edf3;font-size:15px;
+    font-family:inherit;outline:none;line-height:1.4;transition:.2s;
+  }
+  #input:focus{border-color:#2b6cf6}
+  #sendBtn{
+    height:40px;padding:0 18px;border-radius:20px;color:#fff;font-weight:600;
+    font-size:14px;background:linear-gradient(135deg,#2b6cf6,#6b4df6);transition:.15s;flex-shrink:0;
+  }
+  #sendBtn:hover{filter:brightness(1.12)}
+  #sendBtn:active{transform:scale(.96)}
+
+  #emojiPanel{
+    position:absolute;bottom:68px;left:12px;right:12px;
+    background:#161c24;border:1px solid #263140;border-radius:16px;padding:10px;
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(40px,1fr));gap:3px;
+    max-height:210px;overflow-y:auto;z-index:30;
+    box-shadow:0 -12px 40px rgba(0,0,0,.6);
+  }
+  #emojiPanel button{
+    font-size:22px;height:40px;border-radius:10px;background:transparent;transition:.1s;
+  }
+  #emojiPanel button:hover{background:#263140;transform:scale(1.15)}
+
+  #lightbox{
+    position:fixed;inset:0;background:rgba(0,0,0,.93);z-index:200;
+    display:flex;align-items:center;justify-content:center;cursor:zoom-out;padding:20px;
+  }
+  #lightbox img{max-width:100%;max-height:100%;border-radius:8px}
+</style>
+</head>
+<body>
+
+<!-- ================= 登录页 ================= -->
+<div id="login" class="screen">
+  <div class="card">
+    <h1>🔒 点对点聊天室</h1>
+
+    <div class="avatar-pick" id="avatarPick">
+      <img id="avatarPreview" alt="">
+      <div class="avatar-edit">📷</div>
+    </div>
+
+    <div class="field">
+      <label>房间号</label>
+      <input type="text" id="roomInput" maxlength="40" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>昵称</label>
+      <input type="text" id="nameInput" maxlength="16" autocomplete="off">
+    </div>
+
+    <button class="primary" id="enterBtn">进 入 房 间</button>
+    <button id="notifyGuideBtn">🔔 开启新消息通知</button>
+  </div>
+</div>
+<input type="file" id="avatarInput" accept="image/*" hidden>
+
+<!-- ================= 聊天页 ================= -->
+<div id="app" class="screen hidden">
+  <header>
+    <div class="room-info">
+      <span id="roomLabel">房间</span>
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText"></span>
+    </div>
+    <button class="ghost-btn" id="leaveBtn">离开</button>
+  </header>
+
+  <main id="messages"></main>
+
+  <footer>
+    <div id="quotePreview" class="hidden">
+      <div class="q-text"><span id="quoteName"></span>: <span id="quoteText"></span></div>
+      <div class="q-close" id="quoteCancel">✕</div>
+    </div>
+    <button class="icon-btn" id="emojiBtn" title="表情">😊</button>
+    <button class="icon-btn" id="imgBtn" title="图片">🖼️</button>
+    <input type="file" id="fileInput" accept="image/*" hidden>
+    <textarea id="input" rows="1"></textarea>
+    <button id="sendBtn">发送</button>
+  </footer>
+
+  <div id="emojiPanel" class="hidden"></div>
+</div>
+
+<div id="lightbox" class="hidden"><img id="lightboxImg" alt=""></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ================= 配置 ================= */
+  const ROOM_PREFIX = 'pchat2-';
+  const MAX_IMG_EDGE = 1600;
+  const CHUNK = 32000;
+  const GUEST_TIMEOUT = 12000;
+  const AVATAR_SIZE = 96;
+  const HISTORY_MAX = 60;
+
+  const PEER_OPTIONS = {
+    debug: 0,
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun.cloudflare.com:3478' },
+        { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+        { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
+      ]
+    }
+  };
+
+  const EMOJIS = [
+    '😀','😁','😂','🤣','😊','😍','🥰','😘','😎','🤔','😅','😭','😡','🥺','😴',
+    '🤯','🥳','😇','🙃','😏','😜','🤗','🤐','😷','🤡','💀','👻','🤖','💩','🔥',
+    '👍','👎','👏','🙏','💪','🤝','✌️','👌','🤞','🆗','💯','❤️','💔','💖','✨',
+    '🎉','🎁','🍺','🍻','☕','🍜','🍕','🍰','🌹','🌈','⭐','🌙','☀️','🐶','🐱',
+    '🐼','🦊','🚀','💤','🎵','📷','💻','🎮','⚽','🏀'
+  ];
+
+  /* ================= 元素 ================= */
+  const $ = id => document.getElementById(id);
+  const loginEl    = $('login');
+  const appEl      = $('app');
+  const msgEl      = $('messages');
+  const inputEl    = $('input');
+  const emojiPanel = $('emojiPanel');
+  const avatarPreview = $('avatarPreview');
+  const notifyGuideBtn = $('notifyGuideBtn');
+  const quotePreview = $('quotePreview');
+  const quoteName = $('quoteName');
+  const quoteText = $('quoteText');
+
+  /* ================= 状态 ================= */
+  const state = {
+    active: false,
+    myName: '',
+    myAvatar: '',
+    room: '',
+    peer: null,
+    role: null,
+    conn: null,
+    conns: new Map(),
+    timer: null,
+    currentQuote: null // 当前引用的消息
+  };
+
+  const incoming = new Map();
+  let audioCtx = null;
+
+  /* ================= 基础工具 ================= */
+  function hashRoom(str) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return 'r' + h.toString(36) + 'x' + str.length.toString(36);
+  }
+
+  function setStatus(kind, text) {
+    $('statusDot').className = 'dot' +
+      (kind === 'online' ? ' online'
+      : (kind === 'waiting' || kind === 'connecting') ? ' waiting'
+      : kind === 'error' ? ' error' : '');
+    $('statusText').textContent = text || '';
+  }
+
+  function scrollBottom(force) {
+    const near = msgEl.scrollHeight - msgEl.scrollTop - msgEl.clientHeight < 140;
+    if (force || near) msgEl.scrollTop = msgEl.scrollHeight;
+  }
+
+  function addSys(text) {
+    const d = document.createElement('div');
+    d.className = 'sys';
+    d.textContent = text;
+    msgEl.appendChild(d);
+    scrollBottom();
+  }
+
+  function flash(el) {
+    el.style.borderColor = '#e74c3c';
+    setTimeout(() => { el.style.borderColor = ''; }, 700);
+    el.focus();
+  }
+
+  function readFile(file) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = reject;
+      fr.readAsDataURL(file);
+    });
+  }
+
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = src;
+    });
+  }
+
+  /* ================= 引用处理 ================= */
+  function setQuote(msgData) {
+    state.currentQuote = msgData;
+    quoteName.textContent = msgData.from.name;
+    quoteText.textContent = msgData.kind === 'image' ? '[图片]' : msgData.text;
+    quotePreview.classList.remove('hidden');
+    inputEl.focus();
+  }
+
+  function clearQuote() {
+    state.currentQuote = null;
+    quotePreview.classList.add('hidden');
+  }
+
+  $('quoteCancel').addEventListener('click', clearQuote);
+
+  /* ================= 本地聊天记录 ================= */
+  function getHistoryKey() {
+    return 'pchat_history_' + state.room;
+  }
+
+  function saveHistory(msgObj) {
+    try {
+      const key = getHistoryKey();
+      let list = JSON.parse(localStorage.getItem(key) || '[]');
+      if (msgObj.kind === 'image' && msgObj.src && msgObj.src.length > 500000) return;
+      list.push(msgObj);
+      if (list.length > HISTORY_MAX) list = list.slice(list.length - HISTORY_MAX);
+      localStorage.setItem(key, JSON.stringify(list));
+    } catch (e) {
+      try {
+        const key = getHistoryKey();
+        let list = JSON.parse(localStorage.getItem(key) || '[]');
+        list = list.slice(Math.floor(list.length / 2));
+        localStorage.setItem(key, JSON.stringify(list));
+      } catch (err) {}
+    }
+  }
+
+  function loadHistory() {
+    try {
+      const list = JSON.parse(localStorage.getItem(getHistoryKey()) || '[]');
+      if (list.length > 0) {
+        addSys('—— 以下是历史消息 ——');
+        list.forEach(item => {
+          addMsg({
+            kind: item.kind, text: item.text, src: item.src,
+            mine: item.mine, from: item.from, quote: item.quote,
+            skipSave: true
+          });
+        });
+        setTimeout(() => { msgEl.scrollTop = msgEl.scrollHeight; }, 50);
+      }
+    } catch (e) {}
+  }
+
+  /* ================= 头像 ================= */
+  const avatarCache = new Map();
+
+  function makeDefaultAvatar(name) {
+    name = (name || '匿').trim() || '匿';
+    if (avatarCache.has(name)) return avatarCache.get(name);
+
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = AVATAR_SIZE;
+    const ctx = cv.getContext('2d');
+
+    const g = ctx.createLinearGradient(0, 0, AVATAR_SIZE, AVATAR_SIZE);
+    g.addColorStop(0, 'hsl(' + h + ',60%,55%)');
+    g.addColorStop(1, 'hsl(' + ((h + 45) % 360) + ',60%,42%)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, AVATAR_SIZE, AVATAR_SIZE);
+
+    const ch = Array.from(name)[0].toUpperCase();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold ' + Math.round(AVATAR_SIZE * 0.48) + 'px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(ch, AVATAR_SIZE / 2, AVATAR_SIZE / 2 + 2);
+
+    const url = cv.toDataURL('image/jpeg', 0.85);
+    avatarCache.set(name, url);
+    return url;
+  }
+
+  function processAvatar(file) {
+    return readFile(file).then(loadImage).then(img => {
+      const cv = document.createElement('canvas');
+      cv.width = cv.height = AVATAR_SIZE;
+      const ctx = cv.getContext('2d');
+      const s = Math.min(img.width || img.naturalWidth, img.height || img.naturalHeight);
+      const sx = ((img.width || img.naturalWidth) - s) / 2;
+      const sy = ((img.height || img.naturalHeight) - s) / 2;
+      ctx.drawImage(img, sx, sy, s, s, 0, 0, AVATAR_SIZE, AVATAR_SIZE);
+      return cv.toDataURL('image/jpeg', 0.82);
+    });
+  }
+
+  /* ================= 通知与提示音 ================= */
+  function initNotification() {
+    if (!('Notification' in window)) {
+      notifyGuideBtn.textContent = '❌ 浏览器不支持通知';
+      notifyGuideBtn.disabled = true;
+      return;
+    }
+    if (Notification.permission === 'granted') {
+      notifyGuideBtn.style.display = 'none';
+    } else if (Notification.permission === 'denied') {
+      notifyGuideBtn.textContent = '⚠️ 通知已被拒绝';
+      notifyGuideBtn.style.display = 'block';
+      notifyGuideBtn.disabled = true;
+    } else {
+      notifyGuideBtn.style.display = 'block';
+    }
+  }
+
+  notifyGuideBtn.addEventListener('click', async () => {
+    if (!('Notification' in window)) return;
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === 'granted') {
+        notifyGuideBtn.style.display = 'none';
+        if (!audioCtx) {
+          const AC = window.AudioContext || window.webkitAudioContext;
+          if (AC) audioCtx = new AC();
+        }
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+      } else {
+        notifyGuideBtn.textContent = '⚠️ 通知权限未开启';
+        notifyGuideBtn.disabled = true;
+      }
+    } catch (e) {}
+  });
+
+  function playNotificationSound() {
+    try {
+      if (!audioCtx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) audioCtx = new AC();
+      }
+      if (!audioCtx) return;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(1320, audioCtx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.25);
+    } catch (e) {}
+  }
+
+  function showBrowserNotification(title, body) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    if (document.visibilityState === 'visible') return;
+
+    try {
+      const notif = new Notification(title, {
+        body: body,
+        icon: state.myAvatar || makeDefaultAvatar(state.myName),
+        tag: 'chat-msg',
+        renotify: true
+      });
+      notif.onclick = function() {
+        window.focus();
+        notif.close();
+      };
+    } catch (e) {}
+  }
+
+  /* ================= 渲染消息 ================= */
+  function openLightbox(src) {
+    $('lightboxImg').src = src;
+    $('lightbox').classList.remove('hidden');
+  }
+  $('lightbox').addEventListener('click', () => {
+    $('lightbox').classList.add('hidden');
+    $('lightboxImg').src = '';
+  });
+
+  function addMsg(opts) {
+    const f = opts.from || { name: state.myName, avatar: state.myAvatar };
+    const mine = !!opts.mine;
+
+    if (!opts.skipSave) {
+      saveHistory({
+        kind: opts.kind,
+        text: opts.text || '',
+        src: opts.src || '',
+        mine: mine,
+        from: f,
+        quote: opts.quote || null
+      });
+    }
+
+    const wrap = document.createElement('div');
+    wrap.className = 'msg ' + (mine ? 'me' : 'them');
+
+    const av = document.createElement('img');
+    av.className = 'avatar';
+    av.alt = '';
+    av.src = f.avatar || makeDefaultAvatar(f.name);
+
+    const body = document.createElement('div');
+    body.className = 'body';
+
+    const nick = document.createElement('div');
+    nick.className = 'nickname';
+    nick.textContent = f.name || '匿名';
+
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+
+    // 如果有引用，先渲染引用区块
+    if (opts.quote) {
+      const qBlock = document.createElement('div');
+      qBlock.className = 'quote-block';
+      qBlock.innerHTML = `<span class="q-name">@${opts.quote.name}</span> ${opts.quote.kind === 'image' ? '[图片]' : opts.quote.text}`;
+      bubble.appendChild(qBlock);
+    }
+
+    // 渲染具体内容
+    if (opts.kind === 'image') {
+      bubble.classList.add('img');
+      const im = new Image();
+      im.src = opts.src;
+      im.onclick = () => openLightbox(opts.src);
+      bubble.appendChild(im);
+    } else {
+      // 使用 textContent 防止 XSS，但这里因为有了引用区块的 DOM，需要用文本节点插入
+      const textNode = document.createTextNode(opts.text);
+      bubble.appendChild(textNode);
+    }
+
+    // 引用按钮
+    const qBtn = document.createElement('div');
+    qBtn.className = 'quote-btn';
+    qBtn.innerHTML = '↩';
+    qBtn.onclick = (e) => {
+      e.stopPropagation();
+      setQuote({
+        from: f,
+        text: opts.text,
+        kind: opts.kind
+      });
+    };
+    wrap.appendChild(qBtn);
+
+    body.appendChild(nick);
+    body.appendChild(bubble);
+    wrap.appendChild(av);
+    wrap.appendChild(body);
+    msgEl.appendChild(wrap);
+    scrollBottom();
+  }
+
+  /* ================= 资料 / 投递 ================= */
+  function myProfile() {
+    return {
+      id: state.role === 'host' ? 'host' : (state.peer ? state.peer.id : 'me'),
+      name: state.myName,
+      avatar: state.myAvatar
+    };
+  }
+
+  function broadcast(obj, exceptPid) {
+    if (state.role !== 'host') return;
+    state.conns.forEach((entry, pid) => {
+      if (pid === exceptPid) return;
+      if (entry.conn && entry.conn.open) {
+        try { entry.conn.send(obj); } catch (e) {}
+      }
+    });
+  }
+
+  function deliver(obj) {
+    if (state.role === 'host') { broadcast(obj); return true; }
+    if (state.conn && state.conn.open) {
+      try { state.conn.send(obj); return true; } catch (e) {}
+    }
+    return false;
+  }
+
+  function canSend() {
+    if (state.role === 'host') return true;
+    return !!(state.conn && state.conn.open);
+  }
+
+  function updateHostStatus() {
+    if (state.role !== 'host') return;
+    const n = state.conns.size;
+    if (n === 0) {
+      setStatus('online', '已连接');
+    } else {
+      setStatus('online', (n + 1) + ' 人在线');
+    }
+  }
+
+  /* ================= 收数据 ================= */
+  function handleHostData(conn, d) {
+    if (!d || typeof d !== 'object') return;
+    const entry = state.conns.get(conn.peer);
+    const from = d.from || (entry ? { id: conn.peer, name: entry.name, avatar: entry.avatar } : null);
+
+    switch (d.type) {
+      case 'hello': {
+        if (entry) {
+          entry.name = d.name || '匿名';
+          entry.avatar = d.avatar || '';
+          entry.joined = true;
+        }
+        const nm = (entry && entry.name) || '有人';
+        addSys(nm + ' 进入了房间');
+        broadcast({ type: 'sys', text: nm + ' 进入了房间' }, conn.peer);
+        updateHostStatus();
+        break;
+      }
+      case 'text':
+        addMsg({ kind: 'text', text: d.text, mine: false, from, quote: d.quote });
+        broadcast(d, conn.peer);
+        if (from) {
+          playNotificationSound();
+          showBrowserNotification(from.name + ' 发来消息', d.text);
+        }
+        break;
+      case 'img-start':
+        incoming.set(d.id, { parts: new Array(d.total), got: 0, from, quote: d.quote });
+        broadcast(d, conn.peer);
+        break;
+      case 'img-chunk': {
+        const e = incoming.get(d.id);
+        if (e && e.parts[d.i] === undefined) { e.got++; e.parts[d.i] = d.data; }
+        broadcast(d, conn.peer);
+        break;
+      }
+      case 'img-end': {
+        const e = incoming.get(d.id);
+        if (e) {
+          incoming.delete(d.id);
+          addMsg({ kind: 'image', src: e.parts.join(''), mine: false, from: e.from, quote: e.quote });
+          if (e.from) {
+            playNotificationSound();
+            showBrowserNotification(e.from.name + ' 发来图片', '点击查看图片');
+          }
+        }
+        broadcast(d, conn.peer);
+        break;
+      }
+      case 'bye':
+        break;
+    }
+  }
+
+  function handleGuestData(d) {
+    if (!d || typeof d !== 'object') return;
+    switch (d.type) {
+      case 'sys':
+        addSys(d.text);
+        break;
+      case 'text':
+        addMsg({ kind: 'text', text: d.text, mine: false, from: d.from, quote: d.quote });
+        if (d.from) {
+          playNotificationSound();
+          showBrowserNotification(d.from.name + ' 发来消息', d.text);
+        }
+        break;
+      case 'img-start':
+        incoming.set(d.id, { parts: new Array(d.total), got: 0, from: d.from, quote: d.quote });
+        break;
+      case 'img-chunk': {
+        const e = incoming.get(d.id);
+        if (e && e.parts[d.i] === undefined) { e.got++; e.parts[d.i] = d.data; }
+        break;
+      }
+      case 'img-end': {
+        const e = incoming.get(d.id);
+        if (e) {
+          incoming.delete(d.id);
+          addMsg({ kind: 'image', src: e.parts.join(''), mine: false, from: e.from, quote: e.quote });
+          if (e.from) {
+            playNotificationSound();
+            showBrowserNotification(e.from.name + ' 发来图片', '点击查看图片');
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  /* ================= 连接逻辑 ================= */
+  function destroyPeer() {
+    clearTimeout(state.timer);
+    if (state.peer) {
+      try { state.peer.destroy(); } catch (e) {}
+      state.peer = null;
+    }
+    state.conn = null;
+    state.conns.clear();
+  }
+
+  function resetChatState() {
+    msgEl.innerHTML = '';
+    incoming.clear();
+    state.conn = null;
+    state.conns.clear();
+    clearQuote();
+  }
+
+  function startAsHost() {
+    destroyPeer();
+    if (!state.active) return;
+
+    const roomId = ROOM_PREFIX + hashRoom(state.room);
+    const p = new Peer(roomId, PEER_OPTIONS);
+    state.peer = p;
+    state.role = 'host';
+
+    p.on('open', () => {
+      if (state.peer !== p) return;
+      updateHostStatus();
+    });
+
+    p.on('connection', c => {
+      if (state.peer !== p) { try { c.close(); } catch (e) {} return; }
+      const pid = c.peer;
+      const entry = { conn: c, name: '对方', avatar: '', joined: false };
+      state.conns.set(pid, entry);
+
+      c.on('open', () => {
+        entry.joined = true;
+        updateHostStatus();
+      });
+
+      c.on('data', d => handleHostData(c, d));
+
+      c.on('close', () => {
+        const info = state.conns.get(pid);
+        state.conns.delete(pid);
+        if (!state.active) return;
+        if (info && info.joined) {
+          addSys(info.name + ' 离开了房间');
+          broadcast({ type: 'sys', text: info.name + ' 离开了房间' }, pid);
+        }
+        updateHostStatus();
+      });
+
+      c.on('error', () => {});
+      updateHostStatus();
+    });
+
+    p.on('error', err => {
+      if (state.peer !== p || !state.active) return;
+      if (err.type === 'unavailable-id') {
+        destroyPeer();
+        clearTimeout(state.timer);
+        state.timer = setTimeout(() => { if (state.active) startAsGuest(); }, 600);
+      } else if (err.type === 'network' || err.type === 'server-error') {
+        setStatus('error', '网络连接失败');
+      }
+    });
+  }
+
+  function startAsGuest() {
+    destroyPeer();
+    if (!state.active) return;
+
+    const p = new Peer(PEER_OPTIONS);
+    state.peer = p;
+    state.role = 'guest';
+
+    p.on('open', () => {
+      if (state.peer !== p) return;
+      setStatus('connecting', '连接中…');
+
+      const target = ROOM_PREFIX + hashRoom(state.room);
+      const c = p.connect(target, { reliable: true });
+      state.conn = c;
+
+      c.on('open', () => {
+        if (state.conn !== c) return;
+        clearTimeout(state.timer);
+        setStatus('online', '已连接');
+        c.send({ type: 'hello', name: state.myName, avatar: state.myAvatar });
+        addSys('已进入房间');
+        inputEl.focus();
+      });
+
+      c.on('data', handleGuestData);
+
+      c.on('close', () => {
+        if (state.conn !== c) return;
+        onGuestDisconnect();
+      });
+
+      c.on('error', () => {});
+    });
+
+    p.on('error', err => {
+      if (state.peer !== p || !state.active) return;
+      if (err.type === 'peer-unavailable') {
+        destroyPeer();
+        clearTimeout(state.timer);
+        state.timer = setTimeout(() => {
+          if (state.active && !state.conn) startAsHost();
+        }, 1500);
+      } else if (err.type === 'network' || err.type === 'server-error') {
+        setStatus('error', '网络连接失败');
+      }
+    });
+
+    clearTimeout(state.timer);
+    state.timer = setTimeout(() => {
+      if (state.active && state.role === 'guest' && !(state.conn && state.conn.open)) {
+        destroyPeer();
+        startAsHost();
+      }
+    }, GUEST_TIMEOUT);
+  }
+
+  function onGuestDisconnect() {
+    if (!state.active) return;
+    state.conn = null;
+    setStatus('connecting', '重新连接中…');
+    addSys('连接已断开，正在重连…');
+    clearTimeout(state.timer);
+    state.timer = setTimeout(() => {
+      if (state.active && !state.conn) startAsGuest();
+    }, 1800);
+  }
+
+  /* ================= 登录 ================= */
+  let pendingAvatar = '';
+
+  $('avatarPick').addEventListener('click', () => $('avatarInput').click());
+  $('avatarInput').addEventListener('change', async e => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    try {
+      pendingAvatar = await processAvatar(f);
+      avatarPreview.src = pendingAvatar;
+      try { localStorage.setItem('pchat_avatar', pendingAvatar); } catch (err) {}
+    } catch (err) {}
+  });
+
+  $('nameInput').addEventListener('input', () => {
+    if (!pendingAvatar) {
+      avatarPreview.src = makeDefaultAvatar($('nameInput').value.trim() || '匿');
+    }
+  });
+
+  $('enterBtn').addEventListener('click', enterRoom);
+  $('roomInput').addEventListener('keydown', e => { if (e.key === 'Enter') enterRoom(); });
+  $('nameInput').addEventListener('keydown', e => { if (e.key === 'Enter') enterRoom(); });
+
+  function enterRoom() {
+    const room = $('roomInput').value.trim();
+    if (!room) { flash($('roomInput')); return; }
+
+    state.room = room;
+    state.myName = $('nameInput').value.trim() || '匿名';
+    state.myAvatar = pendingAvatar || makeDefaultAvatar(state.myName);
+    state.active = true;
+
+    try {
+      localStorage.setItem('pchat_name', state.myName);
+      localStorage.setItem('pchat_room', room);
+    } catch (e) {}
+    history.replaceState(null, '', '#' + encodeURIComponent(room));
+
+    resetChatState();
+    loginEl.classList.add('hidden');
+    appEl.classList.remove('hidden');
+    $('roomLabel').textContent = '房间：' + room;
+    setStatus('connecting', '初始化…');
+
+    loadHistory();
+    buildEmojiPanel();
+    startAsHost();
+  }
+
+  /* ================= 发送文字 ================= */
+  function sendText() {
+    const text = inputEl.value.trim();
+    if (!text) return;
+    if (!canSend()) { addSys('当前未连接'); return; }
+
+    inputEl.value = '';
+    autoGrow();
+
+    const from = myProfile();
+    const quote = state.currentQuote;
+    
+    addMsg({ kind: 'text', text, mine: true, from, quote });
+    deliver({ type: 'text', text, from, quote });
+    
+    clearQuote();
+  }
+
+  $('sendBtn').addEventListener('click', sendText);
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      sendText();
+    }
+  });
+  inputEl.addEventListener('input', autoGrow);
+
+  function autoGrow() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + 'px';
+  }
+
+  /* ================= 表情 ================= */
+  function buildEmojiPanel() {
+    if (emojiPanel.childElementCount) return;
+    EMOJIS.forEach(em => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = em;
+      b.addEventListener('click', () => insertEmoji(em));
+      emojiPanel.appendChild(b);
+    });
+  }
+
+  function insertEmoji(em) {
+    const s = inputEl.selectionStart ?? inputEl.value.length;
+    const e = inputEl.selectionEnd ?? inputEl.value.length;
+    inputEl.value = inputEl.value.slice(0, s) + em + inputEl.value.slice(e);
+    inputEl.selectionStart = inputEl.selectionEnd = s + em.length;
+    inputEl.focus();
+    autoGrow();
+  }
+
+  $('emojiBtn').addEventListener('click', e => {
+    e.stopPropagation();
+    emojiPanel.classList.toggle('hidden');
+  });
+  document.addEventListener('click', e => {
+    if (!emojiPanel.classList.contains('hidden') &&
+        !emojiPanel.contains(e.target) && e.target !== $('emojiBtn')) {
+      emojiPanel.classList.add('hidden');
+    }
+  });
+
+  /* ================= 图片 ================= */
+  $('imgBtn').addEventListener('click', () => $('fileInput').click());
+  $('fileInput').addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    if (f) sendImageFile(f);
+    e.target.value = '';
+  });
+
+  inputEl.addEventListener('paste', e => {
+    const items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    for (const it of items) {
+      if (it.type && it.type.indexOf('image') === 0) {
+        const f = it.getAsFile();
+        if (f) { e.preventDefault(); sendImageFile(f); return; }
+      }
+    }
+  });
+
+  function compressImage(img) {
+    let w = img.naturalWidth || img.width;
+    let h = img.naturalHeight || img.height;
+    const scale = Math.min(1, MAX_IMG_EDGE / Math.max(w, h));
+    w = Math.max(1, Math.round(w * scale));
+    h = Math.max(1, Math.round(h * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+
+    let q = 0.85;
+    let url = canvas.toDataURL('image/jpeg', q);
+    while (url.length > 900000 && q > 0.35) {
+      q -= 0.1;
+      url = canvas.toDataURL('image/jpeg', q);
+    }
+    return url;
+  }
+
+  async function sendImageFile(file) {
+    if (!canSend()) { addSys('当前未连接'); return; }
+    if (!file.type || file.type.indexOf('image') !== 0) return;
+
+    try {
+      const raw = await readFile(file);
+      const img = await loadImage(raw);
+      const dataUrl = compressImage(img);
+
+      const from = myProfile();
+      const quote = state.currentQuote;
+
+      addMsg({ kind: 'image', src: dataUrl, mine: true, from, quote });
+
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      const total = Math.ceil(dataUrl.length / CHUNK);
+
+      deliver({ type: 'img-start', id, total, from, quote });
+      for (let i = 0; i < total; i++) {
+        deliver({ type: 'img-chunk', id, i, data: dataUrl.slice(i * CHUNK, (i + 1) * CHUNK) });
+        if (i % 6 === 5) await new Promise(r => setTimeout(r, 0));
+      }
+      deliver({ type: 'img-end', id });
+      
+      clearQuote();
+    } catch (err) {
+      addSys('图片发送失败');
+    }
+  }
+
+  /* ================= 离开 ================= */
+  function leaveRoom() {
+    state.active = false;
+    clearTimeout(state.timer);
+
+    if (state.role === 'host') {
+      state.conns.forEach(e => {
+        try { e.conn.send({ type: 'sys', text: '房主离开了房间' }); } catch (err) {}
+      });
+    } else if (state.conn && state.conn.open) {
+      try { state.conn.send({ type: 'bye' }); } catch (e) {}
+    }
+
+    setTimeout(() => {
+      destroyPeer();
+      resetChatState();
+      appEl.classList.add('hidden');
+      loginEl.classList.remove('hidden');
+      setStatus('', '');
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+    }, 150);
+  }
+
+  $('leaveBtn').addEventListener('click', leaveRoom);
+
+  window.addEventListener('beforeunload', () => {
+    if (!state.active) return;
+    if (state.role === 'host') {
+      state.conns.forEach(e => {
+        try { e.conn.send({ type: 'sys', text: '房主离开了房间' }); } catch (err) {}
+      });
+    } else if (state.conn && state.conn.open) {
+      try { state.conn.send({ type: 'bye' }); } catch (e) {}
+    }
+  });
+
+  /* ================= 初始化 ================= */
+  (function init() {
+    try {
+      const n = localStorage.getItem('pchat_name');
+      if (n) $('nameInput').value = n;
+      const r = localStorage.getItem('pchat_room');
+      if (r) $('roomInput').value = r;
+      const a = localStorage.getItem('pchat_avatar');
+      if (a) pendingAvatar = a;
+    } catch (e) {}
+
+    if (location.hash.length > 1) {
+      try { $('roomInput').value = decodeURIComponent(location.hash.slice(1)); } catch (e) {}
+    }
+
+    avatarPreview.src = pendingAvatar ||
+      makeDefaultAvatar($('nameInput').value.trim() || '匿');
+
+    initNotification();
+  })();
+
+})();
+</script>
+</body>
+</html>
