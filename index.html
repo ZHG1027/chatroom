@@ -723,19 +723,17 @@
   }
 
   /* ================= 通知与提示音 ================= */
-  function initNotification() {
-    // 确保按钮默认可见
+    function initNotification() {
+    // 强制显示按钮，防止被 CSS 默认隐藏
     notifyGuideBtn.style.display = 'block';
     
-    // 判断是否为 iOS 设备
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    // 判断是否为 PWA 独立窗口模式（添加到主屏幕后）
     const isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
 
     if (!('Notification' in window)) {
       if (isIOS && !isStandalone) {
         notifyGuideBtn.textContent = '🔔 请添加到主屏幕后开启通知';
-        notifyGuideBtn.disabled = false; // 允许点击，点击后弹窗说明
+        notifyGuideBtn.disabled = false; 
       } else {
         notifyGuideBtn.textContent = '❌ 浏览器不支持通知';
         notifyGuideBtn.disabled = true;
@@ -744,10 +742,15 @@
     }
 
     if (Notification.permission === 'granted') {
-      notifyGuideBtn.style.display = 'none';
+      notifyGuideBtn.textContent = '✅ 新消息通知已开启';
+      notifyGuideBtn.disabled = true; // 已经授权了，显示已开启，不可点击
+      if (!audioCtx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) audioCtx = new AC();
+      }
     } else if (Notification.permission === 'denied') {
       notifyGuideBtn.textContent = '⚠️ 通知已被拒绝，请在浏览器设置中开启';
-      notifyGuideBtn.disabled = false; // 允许点击说明
+      notifyGuideBtn.disabled = false;
     } else {
       notifyGuideBtn.textContent = '🔔 开启新消息通知';
       notifyGuideBtn.disabled = false;
