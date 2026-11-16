@@ -196,9 +196,13 @@
     background:var(--bg-bubble-them);color:var(--text-main);border:1px solid var(--border-main);
     border-bottom-left-radius:5px;
   }
-  .bubble.img{padding:4px;background:var(--bg-bubble-them);border:1px solid var(--border-main)}
-  .bubble.img img{
+  
+  .bubble.img, .bubble.video { padding:4px; background:var(--bg-bubble-them); border:1px solid var(--border-main) }
+  .bubble.img img {
     display:block;max-width:100%;max-height:330px;border-radius:13px;cursor:zoom-in;
+  }
+  .bubble.video video {
+    display:block;max-width:100%;max-height:330px;border-radius:13px;
   }
   
   .bubble.recalled {
@@ -338,8 +342,8 @@
   /* ====== 悬浮主题切换按钮 ====== */
   #themeToggle {
     position: fixed;
-    bottom: 24px;
-    right: 24px;
+    bottom: 80px; /* 初始位置避开底部输入框 */
+    right: 20px;
     width: 46px;
     height: 46px;
     border-radius: 50%;
@@ -351,13 +355,14 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
-    z-index: 250; /* 保证在聊天界面之上 */
-    transition: transform 0.2s, background-color 0.3s;
+    cursor: grab;
+    z-index: 250;
+    touch-action: none; /* 防止移动端拖动时页面滚动 */
+    user-select: none;
+    transition: background-color 0.3s;
   }
-  #themeToggle:hover {
-    transform: scale(1.1);
-    background: var(--bg-btn-hover);
+  #themeToggle:active {
+    cursor: grabbing;
   }
 </style>
 </head>
@@ -411,7 +416,9 @@
     </div>
     <button class="icon-btn" id="emojiBtn" title="表情">😊</button>
     <button class="icon-btn" id="imgBtn" title="图片">🖼️</button>
+    <button class="icon-btn" id="videoBtn" title="视频">🎬</button>
     <input type="file" id="fileInput" accept="image/*" hidden>
+    <input type="file" id="videoInput" accept="video/*" hidden>
     <textarea id="input" rows="1"></textarea>
     <button id="sendBtn">发送</button>
   </footer>
@@ -420,7 +427,7 @@
 </div>
 
 <!-- 悬浮主题按钮 -->
-<button id="themeToggle" title="切换深浅色">🌙</button>
+<button id="themeToggle" title="切换深浅色/拖动">🌙</button>
 
 <div id="lightbox" class="hidden"><img id="lightboxImg" alt=""></div>
 
@@ -440,13 +447,15 @@
   const ROOM_PREFIX = 'pchat2-';
   const MAX_IMG_EDGE = 1600;
   const CHUNK = 32000;
-  const GUEST_TIMEOUT = 12000;
+  const CHUNK_VIDEO = 32768; // 视频分片 32KB
+  const MAX_VIDEO_SIZE = 15 * 1024 * 1024; // 限制 15MB
+  const GUEST_TIMEOUT = 12000; // 客人等待 12 秒没连上房主，触发接管提示
   const AVATAR_SIZE = 96;
   const HISTORY_MAX = 60;
   const RECALL_LIFETIME = 120000;
   const LONG_PRESS_TIME = 500;
 
-  // 🌟 稳定性优化：加入多个全球免费、稳定的 STUN 和 TURN 服务器，提高穿透率
+  // 🚀 稳定性大幅提升：使用高可用 ICE 节点 + 增加预候选池大小
   const PEER_OPTIONS = {
     debug: 0,
     config: {
@@ -457,12 +466,12 @@
         { urls: 'stun:stun3.l.google.com:19302' },
         { urls: 'stun:stun4.l.google.com:19302' },
         { urls: 'stun:stun.cloudflare.com:3478' },
-        // 免费的 Metered TURN 中继服务器
+        // 加入 TCP 中继与免费 TURN 服务器，应对极其严格的防火墙
         { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
         { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
         { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
       ],
-      iceCandidatePoolSize: 10 // 预取候选，加快连接
+      iceCandidatePoolSize: 20 // 增加候选池，加快打洞速度
     }
   };
 
@@ -494,7 +503,7 @@
   const menuQuote = $('menuQuote');
   const menuRecall = $('menuRecall');
 
-  /* ================= 主题切换逻辑 ================= */
+  /* ================= 主题切换与拖动逻辑 ================= */
   let currentTheme = localStorage.getItem('pchat_theme') || 'dark';
   
   function applyTheme(theme) {
@@ -510,9 +519,75 @@
   
   applyTheme(currentTheme);
 
-  themeToggle.addEventListener('click', () => {
-    currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    applyTheme(currentTheme);
+  // 拖动逻辑
+  let isDragging = false;
+  let hasMoved = false;
+  let startX, startY, initialLeft, initialTop;
+
+  // 恢复位置
+  const savedPos = localStorage.getItem('pchat_btn_pos');
+  if (savedPos) {
+    try {
+      const pos = JSON.parse(savedPos);
+      if (pos.left < window.innerWidth && pos.top < window.innerHeight) {
+        themeToggle.style.right = 'auto';
+        themeToggle.style.bottom = 'auto';
+        themeToggle.style.left = pos.left + 'px';
+        themeToggle.style.top = pos.top + 'px';
+      }
+    } catch(e) {}
+  }
+
+  themeToggle.addEventListener('pointerdown', (e) => {
+    isDragging = true;
+    hasMoved = false;
+    startX = e.clientX;
+    startY = e.clientY;
+    const rect = themeToggle.getBoundingClientRect();
+    initialLeft = rect.left;
+    initialTop = rect.top;
+    
+    themeToggle.style.right = 'auto';
+    themeToggle.style.bottom = 'auto';
+    themeToggle.style.left = initialLeft + 'px';
+    themeToggle.style.top = initialTop + 'px';
+    themeToggle.setPointerCapture(e.pointerId);
+  });
+
+  themeToggle.addEventListener('pointermove', (e) => {
+    if (!isDragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+      hasMoved = true;
+    }
+    
+    if (hasMoved) {
+      let newLeft = initialLeft + dx;
+      let newTop = initialTop + dy;
+      
+      // 边界限制
+      newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - themeToggle.offsetWidth));
+      newTop = Math.max(0, Math.min(newTop, window.innerHeight - themeToggle.offsetHeight));
+      
+      themeToggle.style.left = newLeft + 'px';
+      themeToggle.style.top = newTop + 'px';
+    }
+  });
+
+  themeToggle.addEventListener('pointerup', (e) => {
+    if (isDragging) {
+      isDragging = false;
+      if (hasMoved) {
+        const rect = themeToggle.getBoundingClientRect();
+        localStorage.setItem('pchat_btn_pos', JSON.stringify({ left: rect.left, top: rect.top }));
+      } else {
+        // 视为点击
+        currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        applyTheme(currentTheme);
+      }
+    }
   });
 
   /* ================= 状态 ================= */
@@ -526,6 +601,7 @@
     conn: null,
     conns: new Map(),
     timer: null,
+    heartbeatTimer: null,
     currentQuote: null
   };
 
@@ -573,12 +649,21 @@
     el.focus();
   }
 
-  function readFile(file) {
+  function readFileAsDataURL(file) {
     return new Promise((resolve, reject) => {
       const fr = new FileReader();
       fr.onload = () => resolve(fr.result);
       fr.onerror = reject;
       fr.readAsDataURL(file);
+    });
+  }
+
+  function readFileAsArrayBuffer(file) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = reject;
+      fr.readAsArrayBuffer(file);
     });
   }
 
@@ -595,7 +680,7 @@
   function showContextMenu(x, y, opts) {
     currentMenuOpts = opts;
     
-    if (opts.kind === 'image' || opts.kind === 'recalled') {
+    if (opts.kind === 'image' || opts.kind === 'video' || opts.kind === 'recalled') {
       menuCopy.classList.add('hidden');
     } else {
       menuCopy.classList.remove('hidden');
@@ -698,7 +783,7 @@
   function setQuote(msgData) {
     state.currentQuote = msgData;
     quoteName.textContent = msgData.from.name;
-    quoteText.textContent = msgData.kind === 'image' ? '[图片]' : msgData.text;
+    quoteText.textContent = msgData.kind === 'image' ? '[图片]' : (msgData.kind === 'video' ? '[视频]' : msgData.text);
     quotePreview.classList.remove('hidden');
     inputEl.focus();
   }
@@ -717,6 +802,8 @@
 
   function saveHistory(msgObj) {
     try {
+      if (msgObj.kind === 'video') return;
+      
       const key = getHistoryKey();
       let list = JSON.parse(localStorage.getItem(key) || '[]');
       if (msgObj.kind === 'image' && msgObj.src && msgObj.src.length > 500000) return;
@@ -801,7 +888,7 @@
   }
 
   function processAvatar(file) {
-    return readFile(file).then(loadImage).then(img => {
+    return readFileAsDataURL(file).then(loadImage).then(img => {
       const cv = document.createElement('canvas');
       cv.width = cv.height = AVATAR_SIZE;
       const ctx = cv.getContext('2d');
@@ -1043,7 +1130,7 @@
         qNameSpan.className = 'q-name';
         qNameSpan.textContent = '@' + opts.quote.name;
         qBlock.appendChild(qNameSpan);
-        qBlock.appendChild(document.createTextNode(' ' + (opts.quote.kind === 'image' ? '[图片]' : opts.quote.text)));
+        qBlock.appendChild(document.createTextNode(' ' + (opts.quote.kind === 'image' ? '[图片]' : (opts.quote.kind === 'video' ? '[视频]' : opts.quote.text))));
         bubble.appendChild(qBlock);
       }
 
@@ -1052,6 +1139,13 @@
         const im = new Image();
         im.src = opts.src;
         bubble.appendChild(im);
+      } else if (opts.kind === 'video') {
+        bubble.classList.add('video');
+        const vid = document.createElement('video');
+        vid.src = opts.src;
+        vid.controls = true;
+        vid.playsInline = true;
+        bubble.appendChild(vid);
       } else {
         const textNode = document.createTextNode(opts.text);
         bubble.appendChild(textNode);
@@ -1110,6 +1204,16 @@
     }
   }
 
+  // 🚀 心跳保活：防止 NAT 路由表过期导致“假在线”
+  function startHeartbeat() {
+    clearInterval(state.heartbeatTimer);
+    state.heartbeatTimer = setInterval(() => {
+      if (state.active) {
+        deliver({ type: 'ping' });
+      }
+    }, 20000);
+  }
+
   /* ================= 收数据 ================= */
   function handleHostData(conn, d) {
     if (!d || typeof d !== 'object') return;
@@ -1117,6 +1221,8 @@
     const from = d.from || (entry ? { id: conn.peer, name: entry.name, avatar: entry.avatar } : null);
 
     switch (d.type) {
+      case 'ping':
+        break; // 忽略心跳包
       case 'hello': {
         if (entry) {
           entry.name = d.name || '匿名';
@@ -1138,7 +1244,7 @@
         }
         break;
       case 'img-start':
-        incoming.set(d.id, { parts: new Array(d.total), got: 0, from, quote: d.quote, msgId: d.msgId, time: d.time });
+        incoming.set(d.id, { type: 'img', parts: new Array(d.total), got: 0, from, quote: d.quote, msgId: d.msgId, time: d.time });
         broadcast(d, conn.peer);
         break;
       case 'img-chunk': {
@@ -1155,6 +1261,31 @@
           if (e.from) {
             playNotificationSound();
             showBrowserNotification(e.from.name + ' 发来图片', '点击查看图片');
+          }
+        }
+        broadcast(d, conn.peer);
+        break;
+      }
+      case 'vid-start':
+        incoming.set(d.id, { type: 'vid', mime: d.mime, parts: new Array(d.total), got: 0, from, quote: d.quote, msgId: d.msgId, time: d.time });
+        broadcast(d, conn.peer);
+        break;
+      case 'vid-chunk': {
+        const e = incoming.get(d.id);
+        if (e && e.parts[d.i] === undefined) { e.got++; e.parts[d.i] = d.data; }
+        broadcast(d, conn.peer);
+        break;
+      }
+      case 'vid-end': {
+        const e = incoming.get(d.id);
+        if (e) {
+          incoming.delete(d.id);
+          const blob = new Blob(e.parts, { type: e.mime });
+          const url = URL.createObjectURL(blob);
+          addMsg({ kind: 'video', src: url, mine: false, from: e.from, quote: e.quote, msgId: e.msgId, time: e.time });
+          if (e.from) {
+            playNotificationSound();
+            showBrowserNotification(e.from.name + ' 发来视频', '点击播放视频');
           }
         }
         broadcast(d, conn.peer);
@@ -1174,6 +1305,8 @@
   function handleGuestData(d) {
     if (!d || typeof d !== 'object') return;
     switch (d.type) {
+      case 'ping':
+        break;
       case 'sys':
         addSys(d.text);
         break;
@@ -1185,7 +1318,7 @@
         }
         break;
       case 'img-start':
-        incoming.set(d.id, { parts: new Array(d.total), got: 0, from: d.from, quote: d.quote, msgId: d.msgId, time: d.time });
+        incoming.set(d.id, { type: 'img', parts: new Array(d.total), got: 0, from: d.from, quote: d.quote, msgId: d.msgId, time: d.time });
         break;
       case 'img-chunk': {
         const e = incoming.get(d.id);
@@ -1204,6 +1337,28 @@
         }
         break;
       }
+      case 'vid-start':
+        incoming.set(d.id, { type: 'vid', mime: d.mime, parts: new Array(d.total), got: 0, from: d.from, quote: d.quote, msgId: d.msgId, time: d.time });
+        break;
+      case 'vid-chunk': {
+        const e = incoming.get(d.id);
+        if (e && e.parts[d.i] === undefined) { e.got++; e.parts[d.i] = d.data; }
+        break;
+      }
+      case 'vid-end': {
+        const e = incoming.get(d.id);
+        if (e) {
+          incoming.delete(d.id);
+          const blob = new Blob(e.parts, { type: e.mime });
+          const url = URL.createObjectURL(blob);
+          addMsg({ kind: 'video', src: url, mine: false, from: e.from, quote: e.quote, msgId: e.msgId, time: e.time });
+          if (e.from) {
+            playNotificationSound();
+            showBrowserNotification(e.from.name + ' 发来视频', '点击播放视频');
+          }
+        }
+        break;
+      }
       case 'recall':
         doRecallUI(d.msgId);
         updateHistoryRecall(d.msgId);
@@ -1214,6 +1369,7 @@
   /* ================= 连接逻辑 ================= */
   function destroyPeer() {
     clearTimeout(state.timer);
+    clearInterval(state.heartbeatTimer);
     if (state.peer) {
       try { state.peer.destroy(); } catch (e) {}
       state.peer = null;
@@ -1235,14 +1391,23 @@
     destroyPeer();
     if (!state.active) return;
 
+    setStatus('connecting', '正在初始化网络…');
     const roomId = ROOM_PREFIX + hashRoom(state.room);
     const p = new Peer(roomId, PEER_OPTIONS);
     state.peer = p;
     state.role = 'host';
 
+    // 🚀 信令服务器断线自动重连
+    p.on('disconnected', () => {
+      if (!state.active) return;
+      setStatus('waiting', '信令掉线，重连中…');
+      try { p.reconnect(); } catch(e) {}
+    });
+
     p.on('open', () => {
       if (state.peer !== p) return;
       updateHostStatus();
+      startHeartbeat();
     });
 
     p.on('connection', c => {
@@ -1278,9 +1443,11 @@
       if (err.type === 'unavailable-id') {
         destroyPeer();
         clearTimeout(state.timer);
-        state.timer = setTimeout(() => { if (state.active) startAsGuest(); }, 600);
+        state.timer = setTimeout(() => { if (state.active) startAsGuest(); }, 800);
       } else if (err.type === 'network' || err.type === 'server-error') {
-        setStatus('error', '网络连接失败');
+        setStatus('error', '重试中…');
+        clearTimeout(state.timer);
+        state.timer = setTimeout(() => { if (state.active) startAsHost(); }, 3000); // 3秒后重试
       }
     });
   }
@@ -1289,14 +1456,19 @@
     destroyPeer();
     if (!state.active) return;
 
+    setStatus('connecting', '正在连接房主…');
     const p = new Peer(PEER_OPTIONS);
     state.peer = p;
     state.role = 'guest';
 
+    p.on('disconnected', () => {
+      if (!state.active) return;
+      try { p.reconnect(); } catch(e) {}
+    });
+
     p.on('open', () => {
       if (state.peer !== p) return;
-      setStatus('connecting', '连接中…');
-
+      
       const target = ROOM_PREFIX + hashRoom(state.room);
       const c = p.connect(target, { reliable: true });
       state.conn = c;
@@ -1308,6 +1480,7 @@
         c.send({ type: 'hello', name: state.myName, avatar: state.myAvatar });
         addSys('已进入房间');
         inputEl.focus();
+        startHeartbeat();
       });
 
       c.on('data', handleGuestData);
@@ -1323,21 +1496,30 @@
     p.on('error', err => {
       if (state.peer !== p || !state.active) return;
       if (err.type === 'peer-unavailable') {
+        // 找不到房主，可能房主已经离开，静默重试接管
         destroyPeer();
         clearTimeout(state.timer);
         state.timer = setTimeout(() => {
           if (state.active && !state.conn) startAsHost();
         }, 1500);
       } else if (err.type === 'network' || err.type === 'server-error') {
-        setStatus('error', '网络连接失败');
+        setStatus('error', '重试中…');
+        clearTimeout(state.timer);
+        state.timer = setTimeout(() => { if (state.active) startAsGuest(); }, 3000);
       }
     });
 
+    // 🚀 客人 12 秒超时接管机制
     clearTimeout(state.timer);
     state.timer = setTimeout(() => {
       if (state.active && state.role === 'guest' && !(state.conn && state.conn.open)) {
-        destroyPeer();
-        startAsHost();
+        const confirmTakeover = confirm('连接房主超时（网络受限或对方已离开）。\n\n是否强制自己创建房间？（如果对方还在，你们将断开）');
+        if (confirmTakeover) {
+          destroyPeer();
+          startAsHost();
+        } else {
+          setStatus('error', '连接超时');
+        }
       }
     }, GUEST_TIMEOUT);
   }
@@ -1345,12 +1527,12 @@
   function onGuestDisconnect() {
     if (!state.active) return;
     state.conn = null;
-    setStatus('connecting', '重新连接中…');
+    setStatus('connecting', '连接断开，重新连接中…');
     addSys('连接已断开，正在重连…');
     clearTimeout(state.timer);
     state.timer = setTimeout(() => {
       if (state.active && !state.conn) startAsGuest();
-    }, 1800);
+    }, 3000);
   }
 
   /* ================= 登录 ================= */
@@ -1518,7 +1700,7 @@
     if (!file.type || file.type.indexOf('image') !== 0) return;
 
     try {
-      const raw = await readFile(file);
+      const raw = await readFileAsDataURL(file);
       const img = await loadImage(raw);
       const dataUrl = compressImage(img);
 
@@ -1545,10 +1727,58 @@
     }
   }
 
+  /* ================= 视频 ================= */
+  $('videoBtn').addEventListener('click', () => $('videoInput').click());
+  $('videoInput').addEventListener('change', e => {
+    const f = e.target.files && e.target.files[0];
+    if (f) sendVideoFile(f);
+    e.target.value = '';
+  });
+
+  async function sendVideoFile(file) {
+    if (!canSend()) { addSys('当前未连接'); return; }
+    if (!file.type || file.type.indexOf('video') !== 0) return;
+    if (file.size > MAX_VIDEO_SIZE) {
+      alert('视频过大，请限制在 15MB 以内');
+      return;
+    }
+
+    try {
+      const buffer = await readFileAsArrayBuffer(file);
+      
+      const from = myProfile();
+      const quote = state.currentQuote;
+      const msgId = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      const time = Date.now();
+
+      const localBlob = new Blob([buffer], { type: file.type });
+      const localUrl = URL.createObjectURL(localBlob);
+
+      addMsg({ kind: 'video', src: localUrl, mine: true, from, quote, msgId, time });
+
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      const total = Math.ceil(buffer.byteLength / CHUNK_VIDEO);
+      const mime = file.type;
+
+      deliver({ type: 'vid-start', id, total, from, quote, msgId, time, mime });
+      for (let i = 0; i < total; i++) {
+        const chunk = buffer.slice(i * CHUNK_VIDEO, (i + 1) * CHUNK_VIDEO);
+        deliver({ type: 'vid-chunk', id, i, data: chunk });
+        if (i % 6 === 5) await new Promise(r => setTimeout(r, 0));
+      }
+      deliver({ type: 'vid-end', id });
+      
+      clearQuote();
+    } catch (err) {
+      addSys('视频发送失败');
+    }
+  }
+
   /* ================= 离开 ================= */
   function leaveRoom() {
     state.active = false;
     clearTimeout(state.timer);
+    clearInterval(state.heartbeatTimer);
 
     if (state.role === 'host') {
       state.conns.forEach(e => {
